@@ -1,4 +1,5 @@
 streamlit
-anthropic
+easyocr
+opencv-python-headless
 Pillow
 numpy
