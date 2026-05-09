@@ -1,15 +1,11 @@
 import streamlit as st
-import easyocr
+import anthropic
+import base64
 import numpy as np
 from PIL import Image, ImageEnhance
+from io import BytesIO
 import re
- 
-# зарежда OCR - бавно е първия път
-@st.cache_resource
-def load_reader():
-    return easyocr.Reader(['bg', 'en'])
- 
-reader = load_reader()
+import os
  
 # -------------------------------------------------------------------
 # БАЗА С Е-та
@@ -65,112 +61,61 @@ def get_category(num):
     else: return "Неизвестно"
  
 # -------------------------------------------------------------------
-# УМНА ОБРАБОТКА - засича типа на снимката автоматично
+# OCR с Claude API - чете снимката и връща текста
 # -------------------------------------------------------------------
-def detect_image_type(img_rgb):
-    """Връща 'bw' ако снимката е черно-бяла, 'color' ако е цветна"""
-    arr = np.array(img_rgb)
-    r, g, b = arr[:,:,0].astype(int), arr[:,:,1].astype(int), arr[:,:,2].astype(int)
-    color_diff = (np.abs(r - g) + np.abs(g - b) + np.abs(r - b)).mean()
-    return "bw" if color_diff < 25 else "color"
- 
-def otsu_threshold(gray_arr):
-    """Otsu's method - автоматично намира най-добрия threshold"""
-    hist = np.bincount(gray_arr.flatten(), minlength=256)
-    total = gray_arr.size
-    best_thresh, best_var = 128, 0
-    for t in range(1, 255):
-        w0 = hist[:t].sum() / total
-        w1 = hist[t:].sum() / total
-        if w0 == 0 or w1 == 0:
-            continue
-        mu0 = (hist[:t] * np.arange(t)).sum() / (hist[:t].sum() + 1e-10)
-        mu1 = (hist[t:] * np.arange(t, 256)).sum() / (hist[t:].sum() + 1e-10)
-        var = w0 * w1 * (mu0 - mu1) ** 2
-        if var > best_var:
-            best_var = var
-            best_thresh = t
-    return best_thresh
- 
-def preprocess_image(img):
+def read_text_with_claude(img, api_key):
+    # конвертираме снимката в base64
     img_rgb = img.convert("RGB")
-    img_type = detect_image_type(img_rgb)
-    arr = np.array(img_rgb)
+    buffer = BytesIO()
+    img_rgb.save(buffer, format="JPEG", quality=90)
+    img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
  
-    if img_type == "color":
-        # --- Цветен етикет (червен, жълт фон) ---
-        # Засичаме цветния фон и го правим бял
-        r, g, b = arr[:,:,0].astype(int), arr[:,:,1].astype(int), arr[:,:,2].astype(int)
+    client = anthropic.Anthropic(api_key=api_key)
  
-        # Червен фон
-        red_mask = (r - g > 60) & (r - b > 60) & (arr[:,:,0] > 120)
-        arr[red_mask] = [245, 245, 245]
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=1000,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": img_base64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": "Прочети ЦЕЛИЯ текст от тази снимка на хранителен етикет. Върни само текста, без обяснения. Запази всички Е-номера (като E450, Е621 и т.н.) точно както са написани."
+                    }
+                ],
+            }
+        ],
+    )
  
-        # Жълт/оранжев фон
-        yellow_mask = (arr[:,:,0] > 180) & (arr[:,:,1] > 140) & (arr[:,:,2] < 100)
-        arr[yellow_mask] = [245, 245, 245]
- 
-        # Зелен фон
-        green_mask = (arr[:,:,1].astype(int) - arr[:,:,0].astype(int) > 40) & (arr[:,:,1] > 100)
-        arr[green_mask] = [245, 245, 245]
- 
-        img_processed = Image.fromarray(arr.astype(np.uint8))
-        img_processed = img_processed.convert("L")
-        img_processed = ImageEnhance.Contrast(img_processed).enhance(2.5)
-        img_processed = ImageEnhance.Sharpness(img_processed).enhance(3.0)
- 
-    else:
-        # --- Черно-бяла / сива снимка ---
-        # Otsu binarization - автоматичен threshold
-        gray = np.array(img_rgb.convert("L"))
-        thresh = otsu_threshold(gray)
-        binarized = np.where(gray < thresh, 0, 255).astype(np.uint8)
-        img_processed = Image.fromarray(binarized)
- 
-    # Уголемяване - easyocr чете много по-добре на по-голями снимки
-    w, h = img_processed.size
-    target_w = 1600
-    if w < target_w:
-        scale = target_w / w
-        new_size = (int(w * scale), int(h * scale))
-        interp = Image.NEAREST if img_type == "bw" else Image.LANCZOS
-        img_processed = img_processed.resize(new_size, interp)
- 
-    return img_processed, img_type
+    return response.content[0].text
  
 # -------------------------------------------------------------------
-# ТЪРСЕНЕ НА Е-ТА - с всички OCR грешки
+# ТЪРСЕНЕ НА Е-ТА
 # -------------------------------------------------------------------
-def fix_ocr_mistakes(text):
-    """Поправя честите OCR грешки"""
-    # символи, объркани с E
+def find_e_numbers(text):
+    # поправяме OCR грешки
     text = text.replace('[', 'E').replace('|', 'E')
     text = text.replace('€', 'E').replace('{', 'E')
-    text = text.replace('(E', ' E').replace(',E', ', E')
- 
-    # кирилско Е -> латинско E (МНОГО важно за български етикети!)
+    # кирилско Е -> латинско E
     text = text.replace('Е', 'E').replace('е', 'e')
  
-    # OCR понякога чете 'З' вместо '3', 'О' вместо '0'
-    # само в контекст на Е-номера го поправяме
-    text = re.sub(r'[Ee]([О0-9]{3,4})', lambda m: 'E' + m.group(1).replace('О', '0'), text)
- 
-    return text
- 
-def find_e_numbers(text):
-    text = fix_ocr_mistakes(text)
-    text_lower = text.lower()
- 
-    # търсим всички варианти: e621, e 621, e-621, e_621
     pattern = r"e[\s\-_]?\d{3,4}"
-    results = re.findall(pattern, text_lower)
+    results = re.findall(pattern, text.lower())
  
     cleaned = []
     for r in results:
         r = re.sub(r'[\s\-_]', '', r)
         if r not in cleaned:
             cleaned.append(r)
- 
     return cleaned
  
 # -------------------------------------------------------------------
@@ -179,7 +124,19 @@ def find_e_numbers(text):
 st.title("📷 Проверка за Е-та в храна")
 st.caption("Качи снимка на съставките – работи с всякакви етикети")
  
-st.info("💡 **Съвет за по-добри резултати:** Снимай само частта със съставките. По-близо = по-добре.")
+# API ключ - от Streamlit Secrets или ръчно въведен
+api_key = None
+ 
+if "ANTHROPIC_API_KEY" in st.secrets:
+    api_key = st.secrets["ANTHROPIC_API_KEY"]
+else:
+    st.warning("⚠️ Няма API ключ. Въведи го по-долу.")
+    api_key = st.text_input("Anthropic API Key:", type="password", placeholder="sk-ant-...")
+ 
+if not api_key:
+    st.stop()
+ 
+st.info("💡 **Съвет:** Снимай само частта със съставките, на добра светлина.")
  
 choice = st.radio("Избери начин:", ["📁 Качи снимка", "📷 Камера"])
  
@@ -194,36 +151,21 @@ else:
         img = Image.open(cam)
  
 if img:
-    processed, img_type = preprocess_image(img)
- 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image(img, caption="Оригинал", use_column_width=True)
-    with col2:
-        label = "След обработка (черно-бяла)" if img_type == "bw" else "След обработка (цветна)"
-        st.image(processed, caption=label, use_column_width=True)
+    st.image(img, caption="Твоята снимка", use_column_width=True)
  
     if st.button("🔍 Провери за Е-та"):
-        with st.spinner("Четя текста... малко търпение 🙂"):
-            # easyocr с по-ниски прагове за по-добро засичане
-            results = reader.readtext(
-                np.array(processed),
-                detail=1,
-                paragraph=False,
-                text_threshold=0.5,   # колко сигурен да е за текст
-                low_text=0.3,         # засича и по-слаби символи
-                link_threshold=0.3    # свързва близки букви
-            )
- 
-            # вземаме всичко с поне 10% сигурност
-            text_parts = [text for (_, text, conf) in results if conf > 0.1]
-            text = " ".join(text_parts)
+        with st.spinner("Четя текста с AI... 🤖"):
+            try:
+                text = read_text_with_claude(img, api_key)
+            except Exception as err:
+                st.error(f"Грешка: {err}")
+                st.stop()
  
         st.subheader("📄 Разчетен текст:")
         if text.strip():
             st.write(text)
         else:
-            st.warning("Не успях да прочета текст. Пробвай с по-ясна снимка, само на частта със съставките.")
+            st.warning("Не успях да прочета текст. Пробвай с по-ясна снимка.")
  
         e_numbers = find_e_numbers(text)
  
@@ -235,7 +177,6 @@ if img:
                 if not num.isdigit():
                     continue
                 category = get_category(num)
- 
                 if e in harmful_db:
                     desc, level = harmful_db[e]
                     if level == 3:
@@ -251,3 +192,4 @@ if img:
  
         st.divider()
         st.caption("🔴 Много вредно  |  🟡 Внимание  |  🟢 Обикновено безопасно  |  ⚪ Неизвестно")
+ 
