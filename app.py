@@ -1,6 +1,5 @@
 import streamlit as st
-import anthropic
-import base64
+import easyocr
 import numpy as np
 from PIL import Image, ImageEnhance
 from io import BytesIO
@@ -61,52 +60,77 @@ def get_category(num):
     else: return "Неизвестно"
  
 # -------------------------------------------------------------------
-# OCR с Claude API - чете снимката и връща текста
+# УМНА ОБРАБОТКА НА СНИМКАТА
 # -------------------------------------------------------------------
-def read_text_with_claude(img, api_key):
-    # конвертираме снимката в base64
+def detect_image_type(img_rgb):
+    arr = np.array(img_rgb)
+    r = arr[:,:,0].astype(int)
+    g = arr[:,:,1].astype(int)
+    b = arr[:,:,2].astype(int)
+    color_diff = (np.abs(r - g) + np.abs(g - b) + np.abs(r - b)).mean()
+    return "bw" if color_diff < 25 else "color"
+ 
+def otsu_threshold(gray_arr):
+    hist = np.bincount(gray_arr.flatten(), minlength=256)
+    total = gray_arr.size
+    best_thresh, best_var = 128, 0
+    for t in range(1, 255):
+        w0 = hist[:t].sum() / total
+        w1 = hist[t:].sum() / total
+        if w0 == 0 or w1 == 0:
+            continue
+        mu0 = (hist[:t] * np.arange(t)).sum() / (hist[:t].sum() + 1e-10)
+        mu1 = (hist[t:] * np.arange(t, 256)).sum() / (hist[t:].sum() + 1e-10)
+        var = w0 * w1 * (mu0 - mu1) ** 2
+        if var > best_var:
+            best_var = var
+            best_thresh = t
+    return best_thresh
+ 
+def preprocess_image(img):
     img_rgb = img.convert("RGB")
-    buffer = BytesIO()
-    img_rgb.save(buffer, format="JPEG", quality=90)
-    img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    img_type = detect_image_type(img_rgb)
+    arr = np.array(img_rgb)
  
-    client = anthropic.Anthropic(api_key=api_key)
+    if img_type == "color":
+        r = arr[:,:,0].astype(int)
+        g = arr[:,:,1].astype(int)
+        b = arr[:,:,2].astype(int)
+        # червен фон
+        red_mask = (r - g > 60) & (r - b > 60) & (arr[:,:,0] > 120)
+        arr[red_mask] = [245, 245, 245]
+        # жълт фон
+        yellow_mask = (arr[:,:,0] > 180) & (arr[:,:,1] > 140) & (arr[:,:,2] < 100)
+        arr[yellow_mask] = [245, 245, 245]
+        # зелен фон
+        green_mask = (g - r > 40) & (arr[:,:,1] > 100)
+        arr[green_mask] = [245, 245, 245]
  
-    response = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=1000,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": img_base64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": "Прочети ЦЕЛИЯ текст от тази снимка на хранителен етикет. Върни само текста, без обяснения. Запази всички Е-номера (като E450, Е621 и т.н.) точно както са написани."
-                    }
-                ],
-            }
-        ],
-    )
+        img_processed = Image.fromarray(arr.astype(np.uint8)).convert("L")
+        img_processed = ImageEnhance.Contrast(img_processed).enhance(2.5)
+        img_processed = ImageEnhance.Sharpness(img_processed).enhance(3.0)
+    else:
+        gray = np.array(img_rgb.convert("L"))
+        thresh = otsu_threshold(gray)
+        binarized = np.where(gray < thresh, 0, 255).astype(np.uint8)
+        img_processed = Image.fromarray(binarized)
  
-    return response.content[0].text
+    # уголемяване
+    w, h = img_processed.size
+    if w < 1600:
+        scale = 1600 / w
+        interp = Image.NEAREST if img_type == "bw" else Image.LANCZOS
+        img_processed = img_processed.resize((int(w * scale), int(h * scale)), interp)
+ 
+    return img_processed, img_type
  
 # -------------------------------------------------------------------
 # ТЪРСЕНЕ НА Е-ТА
 # -------------------------------------------------------------------
 def find_e_numbers(text):
-    # поправяме OCR грешки
     text = text.replace('[', 'E').replace('|', 'E')
     text = text.replace('€', 'E').replace('{', 'E')
-    # кирилско Е -> латинско E
-    text = text.replace('Е', 'E').replace('е', 'e')
+    text = text.replace('Е', 'E').replace('е', 'e')  # кирилско -> латинско
  
     pattern = r"e[\s\-_]?\d{3,4}"
     results = re.findall(pattern, text.lower())
@@ -119,24 +143,28 @@ def find_e_numbers(text):
     return cleaned
  
 # -------------------------------------------------------------------
+# ЗАРЕЖДАНЕ НА OCR - с кеш за да не се сваля модела всеки път
+# -------------------------------------------------------------------
+@st.cache_resource(show_spinner="Зарежда се AI моделът... само първия път е бавно ⏳")
+def load_reader():
+    # пазим модела в /tmp за да оцелее между рестарти
+    model_dir = "/tmp/easyocr_models"
+    os.makedirs(model_dir, exist_ok=True)
+    return easyocr.Reader(
+        ['bg', 'en'],
+        model_storage_directory=model_dir,
+        download_enabled=True
+    )
+ 
+# -------------------------------------------------------------------
 # ИНТЕРФЕЙС
 # -------------------------------------------------------------------
 st.title("📷 Проверка за Е-та в храна")
 st.caption("Качи снимка на съставките – работи с всякакви етикети")
  
-# API ключ - от Streamlit Secrets или ръчно въведен
-api_key = None
- 
-if "ANTHROPIC_API_KEY" in st.secrets:
-    api_key = st.secrets["ANTHROPIC_API_KEY"]
-else:
-    st.warning("⚠️ Няма API ключ. Въведи го по-долу.")
-    api_key = st.text_input("Anthropic API Key:", type="password", placeholder="sk-ant-...")
- 
-if not api_key:
-    st.stop()
- 
 st.info("💡 **Съвет:** Снимай само частта със съставките, на добра светлина.")
+ 
+reader = load_reader()
  
 choice = st.radio("Избери начин:", ["📁 Качи снимка", "📷 Камера"])
  
@@ -151,15 +179,27 @@ else:
         img = Image.open(cam)
  
 if img:
-    st.image(img, caption="Твоята снимка", use_column_width=True)
+    processed, img_type = preprocess_image(img)
+ 
+    col1, col2 = st.columns(2)
+    with col1:
+        st.image(img, caption="Оригинал", use_column_width=True)
+    with col2:
+        caption = "След обработка (черно-бяла)" if img_type == "bw" else "След обработка (цветна)"
+        st.image(processed, caption=caption, use_column_width=True)
  
     if st.button("🔍 Провери за Е-та"):
-        with st.spinner("Четя текста с AI... 🤖"):
-            try:
-                text = read_text_with_claude(img, api_key)
-            except Exception as err:
-                st.error(f"Грешка: {err}")
-                st.stop()
+        with st.spinner("Четя текста... малко търпение 🙂"):
+            results = reader.readtext(
+                np.array(processed),
+                detail=1,
+                paragraph=False,
+                text_threshold=0.5,
+                low_text=0.3,
+                link_threshold=0.3
+            )
+            text_parts = [text for (_, text, conf) in results if conf > 0.1]
+            text = " ".join(text_parts)
  
         st.subheader("📄 Разчетен текст:")
         if text.strip():
@@ -192,4 +232,3 @@ if img:
  
         st.divider()
         st.caption("🔴 Много вредно  |  🟡 Внимание  |  🟢 Обикновено безопасно  |  ⚪ Неизвестно")
- 
