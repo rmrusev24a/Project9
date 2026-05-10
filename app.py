@@ -1,9 +1,9 @@
 import streamlit as st
+import pytesseract
 from PIL import Image, ImageEnhance
-import numpy as np
 import re
 
-st.title("📷 Е-та скенер (прост вариант)")
+st.title("📷 Е-та скенер")
 
 harmful = {
     "e102": "Тартразин",
@@ -16,43 +16,48 @@ harmful = {
 
 file = st.file_uploader("Качи снимка", type=["jpg", "jpeg", "png"])
 
-def fake_ocr(image):
+def preprocess(img):
 
-    img = image.convert("L")
-    img = ImageEnhance.Contrast(img).enhance(2)
+    img = img.convert("L")
 
-    arr = np.array(img)
+    img = ImageEnhance.Contrast(img).enhance(3)
 
-    text = ""
+    w, h = img.size
 
-    # супер прост "OCR" трик: превръщаме пиксели в текст чрез шумово четене
-    # (реално не е истински OCR, но за учебен проект работи като идея)
+    if w < 1500:
+        scale = 1500 / w
+        img = img.resize((int(w * scale), int(h * scale)))
 
-    for row in arr:
-        for pixel in row:
-            if pixel < 120:
-                text += "e"
-
-    return text
+    return img
 
 if file:
 
     img = Image.open(file)
 
-    st.image(img, caption="Снимка")
+    st.image(img, caption="Оригинал")
+
+    processed = preprocess(img)
+
+    st.image(processed, caption="Обработена")
 
     if st.button("Сканирай"):
 
-        text = fake_ocr(img)
+        text = pytesseract.image_to_string(processed, lang="eng")
+
+        text = text.lower().replace(" ", "").replace("-", "")
 
         found = re.findall(r"e\d{3,4}", text)
 
         found = list(set(found))
 
-        st.subheader("Резултат")
+        st.subheader("Разпознат текст")
+
+        st.write(text if text else "Нищо не е разпознато")
+
+        st.subheader("Е-та")
 
         if not found:
-            st.success("Няма намерени Е-та (или снимката е неясна)")
+            st.success("Няма намерени Е-та")
         else:
             for e in found:
                 if e in harmful:
