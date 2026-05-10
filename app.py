@@ -1,75 +1,55 @@
 import streamlit as st
 import easyocr
+from PIL import Image
 import numpy as np
-from PIL import Image, ImageEnhance
-import re
 
-st.title("📷 Е-та скенер")
+st.title("Проверка на вредни съставки")
 
-@st.cache_resource
-def load_reader():
-    return easyocr.Reader(['en'], gpu=False)
+st.write("Качи снимка на етикет на храна.")
 
-reader = load_reader()
+uploaded_file = st.file_uploader(
+    "Избери снимка",
+    type=["jpg", "png", "jpeg"]
+)
 
-harmful = {
-    "e102": "Тартразин",
-    "e110": "Залез жълто",
-    "e211": "Натриев бензоат",
-    "e250": "Натриев нитрит",
-    "e621": "MSG",
-    "e951": "Аспартам"
-}
+# Списък с вредни съставки
+harmful_ingredients = [
+    "E621",
+    "E102",
+    "E110",
+    "палмово масло",
+    "Palm Oil",
+    "Aspartame"
+]
 
-file = st.file_uploader("Качи снимка", type=["jpg", "jpeg", "png"])
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
 
-def preprocess(img):
+    st.image(image, caption="Качена снимка", use_container_width=True)
 
-    img = img.convert("L")
+    # Превръщаме снимката в масив
+    img_array = np.array(image)
 
-    img = ImageEnhance.Contrast(img).enhance(2.5)
+    st.write("Разпознаване на текст...")
 
-    w, h = img.size
+    # EasyOCR
+    reader = easyocr.Reader(['bg', 'en'])
 
-    if w < 1600:
-        scale = 1600 / w
-        img = img.resize((int(w * scale), int(h * scale)))
+    results = reader.readtext(img_array, detail=0)
 
-    return img
+    detected_text = " ".join(results)
 
-if file:
+    st.subheader("Разпознат текст:")
+    st.write(detected_text)
 
-    img = Image.open(file)
+    st.subheader("Намерени вредни съставки:")
 
-    st.image(img, caption="Оригинал")
+    found = False
 
-    processed = preprocess(img)
+    for ingredient in harmful_ingredients:
+        if ingredient.lower() in detected_text.lower():
+            st.warning(f"Намерена съставка: {ingredient}")
+            found = True
 
-    st.image(processed, caption="Обработена")
-
-    if st.button("Сканирай"):
-
-        result = reader.readtext(np.array(processed), detail=0)
-
-        text = " ".join(result).lower()
-
-        text = text.replace(" ", "").replace("-", "")
-
-        found = re.findall(r"e\d{3,4}", text)
-
-        found = list(set(found))
-
-        st.subheader("Текст")
-
-        st.write(text if text else "Нищо не е разпознато")
-
-        st.subheader("Е-та")
-
-        if not found:
-            st.success("Няма Е-та")
-        else:
-            for e in found:
-                if e in harmful:
-                    st.error(f"{e.upper()} - {harmful[e]}")
-                else:
-                    st.warning(f"{e.upper()} - неизвестно")
+    if not found:
+        st.success("Не са намерени вредни съставки.")
