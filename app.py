@@ -85,20 +85,14 @@ def get_alternatives(found_words):
             alternatives.extend(food_alternatives[word])
     return list(set(alternatives))
 
-st.set_page_config(page_title="Анализатор на етикети", page_icon="🔬", layout="centered")
-st.title("🔬 OCR етикет + вредни съставки + алтернатива")
+st.set_page_config(page_title="Скенер на етикети", page_icon="🔬", layout="centered")
+st.title("🔬 Скенер на етикети")
 st.markdown("Качи снимка на хранителен етикет и ще открием вредните съставки.")
 
 uploaded_file = st.file_uploader("Качи изображение на етикет:", type=["jpg", "jpeg", "png", "webp"])
-camera_photo = st.camera_input("Или направи снимка с камера:")
 
-image = None
 if uploaded_file:
     image = Image.open(uploaded_file)
-elif camera_photo:
-    image = Image.open(camera_photo)
-
-if image:
     st.image(image, caption="Качено изображение", use_container_width=True)
 
     with st.spinner("Зареждаме AI модела и четем етикета... (може да отнеме 1-2 минути при първо зареждане)"):
@@ -129,23 +123,3 @@ if image:
         st.subheader("🍽️ Алтернативи:")
         for alt in alternatives:
             st.info(f"✔️ {alt}")
-
-    report_lines = ["=== ОТЧЕТ ЗА АНАЛИЗ НА ЕТИКЕТ ===\n\n"]
-    report_lines.append("--- Разпознат текст ---\n" + text + "\n\n")
-    report_lines.append("--- Вредни Е-номера ---\n")
-    for k, v in found_e.items():
-        report_lines.append(f"{k}: {v}\n")
-    report_lines.append("\n--- Вредни съставки ---\n")
-    for k, v in found_words.items():
-        report_lines.append(f"{k}: {v}\n")
-    report_lines.append("\n--- Алтернативи ---\n")
-    for a in alternatives:
-        report_lines.append(f"- {a}\n")
-
-    st.subheader("📥 Генериран отчет")
-    st.download_button(
-        "⬇️ Изтегли отчет като .txt",
-        data="".join(report_lines),
-        file_name="report.txt",
-        mime="text/plain"
-    )
