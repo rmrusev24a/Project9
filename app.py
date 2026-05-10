@@ -91,7 +91,7 @@ def get_alternatives(found_words):
     return list(set(alternatives))
  
 st.set_page_config(page_title="Скенер на етикети", page_icon="🔬", layout="centered")
-st.title("🔬 Скенер на етикети")
+st.title("Скенер на етикети")
 st.markdown("Качи снимка на хранителен етикет и ще открием вредните съставки.")
  
 uploaded_file = st.file_uploader("Качи изображение на етикет:", type=["jpg", "jpeg", "png", "webp"])
