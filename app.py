@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 from PIL import Image, ImageEnhance
-
+ 
 harmful_e_numbers = {
     "E407": "Карагенан — възпаления, храносмилателни проблеми",
     "E621": "Натриев глутамат — главоболие, алергии",
@@ -23,7 +23,7 @@ harmful_e_numbers = {
     "E320": "BHA — потенциално канцерогенен",
     "E951": "Аспартам — спорно влияние върху здравето",
 }
-
+ 
 harmful_words = {
     "палмово масло": "Насищени мазнини — вредно за сърцето",
     "хидрогенирано": "Трансмазнини — вредни за сърдечно-съдовата система",
@@ -36,7 +36,7 @@ harmful_words = {
     "глутен": "Глутен — проблемен при целиакия и непоносимост",
     "аспартам": "Аспартам — изкуствен подсладител, спорно влияние",
 }
-
+ 
 food_alternatives = {
     "палмово масло": ["Зехтин или слънчогледово масло", "Кокосово масло в малки количества"],
     "хидрогенирано": ["Масло, зехтин или авокадо като източници на мазнини"],
@@ -47,24 +47,24 @@ food_alternatives = {
     "лактоза": ["Растителни млека — бадемово, овесено, соево"],
     "глутен": ["Ориз, царевица, елда, киноа"],
 }
-
+ 
 @st.cache_resource
 def get_reader():
     import easyocr
     return easyocr.Reader(["bg", "en"], gpu=False)
-
+ 
 def enhance_image(img):
     img = img.convert("RGB")
     img = ImageEnhance.Contrast(img).enhance(2.0)
     img = ImageEnhance.Sharpness(img).enhance(2.0)
     return img
-
+ 
 def extract_text(img):
     reader = get_reader()
     img_array = np.array(img)
     results = reader.readtext(img_array, detail=0)
     return " ".join(results)
-
+ 
 def find_harmful(text):
     text_upper = text.upper()
     text_lower = text.lower()
@@ -77,47 +77,47 @@ def find_harmful(text):
         if word.lower() in text_lower:
             found_words[word] = description
     return found_e, found_words
-
+ 
 def get_alternatives(found_words):
     alternatives = []
     for word in found_words:
         if word in food_alternatives:
             alternatives.extend(food_alternatives[word])
     return list(set(alternatives))
-
+ 
 st.set_page_config(page_title="Скенер на етикети", page_icon="🔬", layout="centered")
 st.title("🔬 Скенер на етикети")
 st.markdown("Качи снимка на хранителен етикет и ще открием вредните съставки.")
-
+ 
 uploaded_file = st.file_uploader("Качи изображение на етикет:", type=["jpg", "jpeg", "png", "webp"])
-
+ 
 if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="Качено изображение", use_container_width=True)
-
+ 
     with st.spinner("Зареждаме AI модела и четем етикета... (може да отнеме 1-2 минути при първо зареждане)"):
         enhanced = enhance_image(image)
         text = extract_text(enhanced)
-
+ 
     st.subheader("📄 Разпознат текст:")
     st.text_area("", text, height=150)
-
+ 
     found_e, found_words = find_harmful(text)
-
+ 
     st.subheader("🧪 Открити вредни съставки (Е-кодове):")
     if found_e:
         for code, desc in found_e.items():
             st.error(f"⚠️ **{code}** — {desc}")
     else:
         st.success("✅ Няма открити Е-номера.")
-
+ 
     st.subheader("🍬 Засечени съставки (по дума):")
     if found_words:
         for word, desc in found_words.items():
             st.warning(f"⚠️ {word} — {desc}")
     else:
         st.success("✅ Няма засечени проблемни съставки.")
-
+ 
     alternatives = get_alternatives(found_words)
     if alternatives:
         st.subheader("🍽️ Алтернативи:")
