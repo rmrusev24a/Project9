@@ -52,6 +52,10 @@ food_alternatives = {
 def get_reader():
     import easyocr
     return easyocr.Reader(["bg", "en"], gpu=False)
+
+def fix_ocr_errors(text):
+    text = text.replace("[", "E")
+    return text
  
 def enhance_image(img):
     img = img.convert("RGB")
