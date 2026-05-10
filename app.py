@@ -1,55 +1,56 @@
 import streamlit as st
-import easyocr
 from PIL import Image
 import numpy as np
+import easyocr
 
-st.title("Проверка на вредни съставки")
+st.set_page_config(page_title="Food Scanner")
 
-st.write("Качи снимка на етикет на храна.")
+st.title("Скенер за вредни съставки")
+
+st.write("Качи снимка на етикет.")
 
 uploaded_file = st.file_uploader(
     "Избери снимка",
-    type=["jpg", "png", "jpeg"]
+    type=["png", "jpg", "jpeg"]
 )
 
-# Списък с вредни съставки
-harmful_ingredients = [
-    "E621",
-    "E102",
-    "E110",
+# Вредни съставки
+harmful = [
+    "e621",
+    "e102",
+    "e110",
     "палмово масло",
-    "Palm Oil",
-    "Aspartame"
+    "aspartame"
 ]
 
 if uploaded_file is not None:
+
     image = Image.open(uploaded_file)
 
-    st.image(image, caption="Качена снимка", use_container_width=True)
+    st.image(image, caption="Качена снимка")
 
-    # Превръщаме снимката в масив
-    img_array = np.array(image)
+    img = np.array(image)
 
-    st.write("Разпознаване на текст...")
+    st.write("Сканиране...")
 
-    # EasyOCR
-    reader = easyocr.Reader(['bg', 'en'])
+    # OCR
+    reader = easyocr.Reader(['bg', 'en'], gpu=False)
 
-    results = reader.readtext(img_array, detail=0)
+    result = reader.readtext(img, detail=0)
 
-    detected_text = " ".join(results)
+    text = " ".join(result)
 
     st.subheader("Разпознат текст:")
-    st.write(detected_text)
+    st.write(text)
 
-    st.subheader("Намерени вредни съставки:")
+    st.subheader("Проверка:")
 
     found = False
 
-    for ingredient in harmful_ingredients:
-        if ingredient.lower() in detected_text.lower():
-            st.warning(f"Намерена съставка: {ingredient}")
+    for item in harmful:
+        if item in text.lower():
+            st.error(f"Намерено: {item}")
             found = True
 
     if not found:
-        st.success("Не са намерени вредни съставки.")
+        st.success("Няма намерени вредни съставки.")
