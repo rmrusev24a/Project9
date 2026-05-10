@@ -99,27 +99,27 @@ if uploaded_file:
         enhanced = enhance_image(image)
         text = extract_text(enhanced)
  
-    st.subheader("📄 Разпознат текст:")
+    st.subheader("Разпознат текст:")
     st.text_area("", text, height=150)
  
     found_e, found_words = find_harmful(text)
  
-    st.subheader("🧪 Открити вредни съставки (Е-кодове):")
+    st.subheader("Открити вредни съставки (Е-кодове):")
     if found_e:
         for code, desc in found_e.items():
-            st.error(f"⚠️ **{code}** — {desc}")
+            st.error(f"**{code}** — {desc}")
     else:
-        st.success("✅ Няма открити Е-номера.")
+        st.success("Няма открити Е-номера.")
  
-    st.subheader("🍬 Засечени съставки (по дума):")
+    st.subheader("Засечени съставки (по дума):")
     if found_words:
         for word, desc in found_words.items():
-            st.warning(f"⚠️ {word} — {desc}")
+            st.warning(f"{word} — {desc}")
     else:
-        st.success("✅ Няма засечени проблемни съставки.")
+        st.success("Няма засечени проблемни съставки.")
  
     alternatives = get_alternatives(found_words)
     if alternatives:
-        st.subheader("🍽️ Алтернативи:")
+        st.subheader("Алтернативи:")
         for alt in alternatives:
-            st.info(f"✔️ {alt}")
+            st.info(f"{alt}")
