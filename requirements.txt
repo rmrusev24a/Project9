@@ -1,6 +1,7 @@
 streamlit
 easyocr
-numpy
+numpy<2
 pillow
-torch
-torchvision
+torch==2.2.2
+torchvision==0.17.2
+opencv-python-headless
