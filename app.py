@@ -1,9 +1,16 @@
 import streamlit as st
-import pytesseract
+import easyocr
+import numpy as np
 from PIL import Image, ImageEnhance
 import re
 
 st.title("📷 Е-та скенер")
+
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['en'], gpu=False)
+
+reader = load_reader()
 
 harmful = {
     "e102": "Тартразин",
@@ -20,12 +27,12 @@ def preprocess(img):
 
     img = img.convert("L")
 
-    img = ImageEnhance.Contrast(img).enhance(3)
+    img = ImageEnhance.Contrast(img).enhance(2.5)
 
     w, h = img.size
 
-    if w < 1500:
-        scale = 1500 / w
+    if w < 1600:
+        scale = 1600 / w
         img = img.resize((int(w * scale), int(h * scale)))
 
     return img
@@ -42,22 +49,24 @@ if file:
 
     if st.button("Сканирай"):
 
-        text = pytesseract.image_to_string(processed, lang="eng")
+        result = reader.readtext(np.array(processed), detail=0)
 
-        text = text.lower().replace(" ", "").replace("-", "")
+        text = " ".join(result).lower()
+
+        text = text.replace(" ", "").replace("-", "")
 
         found = re.findall(r"e\d{3,4}", text)
 
         found = list(set(found))
 
-        st.subheader("Разпознат текст")
+        st.subheader("Текст")
 
         st.write(text if text else "Нищо не е разпознато")
 
         st.subheader("Е-та")
 
         if not found:
-            st.success("Няма намерени Е-та")
+            st.success("Няма Е-та")
         else:
             for e in found:
                 if e in harmful:
