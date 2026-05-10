@@ -67,7 +67,8 @@ def extract_text(img):
     reader = get_reader()
     img_array = np.array(img)
     results = reader.readtext(img_array, detail=0)
-    return " ".join(results)
+    raw_text = " ".join(results)
+    return fix_ocr_errors(raw_text)
  
 def find_harmful(text):
     text_upper = text.upper()
