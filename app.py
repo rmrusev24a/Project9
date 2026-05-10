@@ -15,6 +15,7 @@ harmful_db = {
 }
 
 def get_category(num):
+
     e = int(num)
 
     if 100 <= e <= 199:
@@ -46,19 +47,31 @@ def preprocess_image(img):
 
     w, h = img.size
 
-    if w < 1500:
-        scale = 1500 / w
+    if w < 2000:
+        scale = 2000 / w
         img = img.resize((int(w * scale), int(h * scale)))
 
-    img = img.filter(ImageFilter.SHARPEN)
+    img = ImageEnhance.Sharpness(img).enhance(3)
 
-    img = ImageEnhance.Contrast(img).enhance(2)
+    gray = img.convert("L")
+
+    gray = ImageEnhance.Contrast(gray).enhance(3)
+
+    arr = np.array(gray)
+
+    arr = np.where(arr > 150, 255, 0).astype(np.uint8)
+
+    img = Image.fromarray(arr)
 
     return img
 
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['bg', 'en'])
+
+    return easyocr.Reader(
+        ['bg', 'en'],
+        gpu=False
+    )
 
 reader = load_reader()
 
@@ -114,17 +127,25 @@ if file:
 
             texts = []
 
-            result1 = reader.readtext(np.array(processed))
+            result1 = reader.readtext(
+                np.array(processed),
+                detail=0,
+                paragraph=True
+            )
 
             gray = processed.convert("L")
-            result2 = reader.readtext(np.array(gray))
 
-            high = ImageEnhance.Contrast(gray).enhance(3)
-            result3 = reader.readtext(np.array(high))
+            result2 = reader.readtext(
+                np.array(gray),
+                detail=0,
+                paragraph=True
+            )
 
-            for r in [result1, result2, result3]:
-                for item in r:
-                    texts.append(item[1])
+            for r in result1:
+                texts.append(r)
+
+            for r in result2:
+                texts.append(r)
 
             full_text = " ".join(texts)
 
@@ -137,6 +158,7 @@ if file:
         st.subheader("⚠️ Намерени Е-та")
 
         if len(e_numbers) == 0:
+
             st.success("Няма намерени Е-та")
 
         else:
