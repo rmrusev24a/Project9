@@ -1,7 +1,10 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import streamlit as st
 import easyocr
 import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance
 import re
 
 harmful_db = {
@@ -47,11 +50,9 @@ def preprocess_image(img):
 
     w, h = img.size
 
-    if w < 2000:
-        scale = 2000 / w
+    if w < 1800:
+        scale = 1800 / w
         img = img.resize((int(w * scale), int(h * scale)))
-
-    img = ImageEnhance.Sharpness(img).enhance(3)
 
     gray = img.convert("L")
 
@@ -59,7 +60,7 @@ def preprocess_image(img):
 
     arr = np.array(gray)
 
-    arr = np.where(arr > 150, 255, 0).astype(np.uint8)
+    arr = np.where(arr > 140, 255, 0).astype(np.uint8)
 
     img = Image.fromarray(arr)
 
@@ -69,8 +70,9 @@ def preprocess_image(img):
 def load_reader():
 
     return easyocr.Reader(
-        ['bg', 'en'],
-        gpu=False
+        ['en'],
+        gpu=False,
+        verbose=False
     )
 
 reader = load_reader()
@@ -98,9 +100,9 @@ def find_e_numbers(text):
 
     return result
 
-st.title("📷 Проверка за Е-та")
+st.set_page_config(page_title="E Scanner")
 
-st.write("Качи снимка на съставките")
+st.title("📷 Проверка за Е-та")
 
 file = st.file_uploader(
     "Качи снимка",
@@ -125,29 +127,13 @@ if file:
 
         with st.spinner("Сканиране..."):
 
-            texts = []
-
-            result1 = reader.readtext(
+            result = reader.readtext(
                 np.array(processed),
                 detail=0,
                 paragraph=True
             )
 
-            gray = processed.convert("L")
-
-            result2 = reader.readtext(
-                np.array(gray),
-                detail=0,
-                paragraph=True
-            )
-
-            for r in result1:
-                texts.append(r)
-
-            for r in result2:
-                texts.append(r)
-
-            full_text = " ".join(texts)
+            full_text = " ".join(result)
 
         st.subheader("📄 Разчетен текст")
 
