@@ -1,5 +1,6 @@
 import streamlit as st
 import numpy as np
+import easyocr
 from PIL import Image, ImageEnhance
  
 harmful_e_numbers = {
@@ -50,7 +51,6 @@ food_alternatives = {
  
 @st.cache_resource
 def get_reader():
-    import easyocr
     return easyocr.Reader(["bg", "en"], gpu=False)
 
 def fix_ocr_errors(text):
@@ -90,7 +90,7 @@ def get_alternatives(found_words):
             alternatives.extend(food_alternatives[word])
     return list(set(alternatives))
  
-st.set_page_config(page_title="Скенер на етикети", page_icon="🔬", layout="centered")
+st.set_page_config(page_title="Скенер на етикети", layout="centered")
 st.title("Скенер на етикети")
 st.markdown("Качи снимка на хранителен етикет и ще открием вредните съставки.")
  
