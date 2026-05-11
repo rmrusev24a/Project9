@@ -103,10 +103,7 @@ if uploaded_file:
     with st.spinner("Зареждаме AI модела и четем етикета... (може да отнеме 1-2 минути при първо зареждане)"):
         enhanced = enhance_image(image)
         text = extract_text(enhanced)
- 
-    st.subheader("Разпознат текст:")
-    st.text_area("", text, height=150)
- 
+     
     found_e, found_words = find_harmful(text)
  
     st.subheader("Открити вредни съставки (Е-кодове):")
