@@ -100,20 +100,20 @@ if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="Качено изображение", use_container_width=True)
  
-    with st.spinner("Зареждаме AI модела и четем етикета... (може да отнеме 1-2 минути при първо зареждане)"):
+    with st.spinner("Зареждаме AI модела и четем етикета..."):
         enhanced = enhance_image(image)
         text = extract_text(enhanced)
      
     found_e, found_words = find_harmful(text)
  
-    st.subheader("Открити вредни съставки (Е-кодове):")
+    st.subheader("Открити вредни съставки:")
     if found_e:
         for code, desc in found_e.items():
             st.error(f"**{code}** — {desc}")
     else:
-        st.success("Няма открити Е-номера.")
+        st.success("Няма открити Е-та.")
  
-    st.subheader("Засечени съставки (по дума):")
+    st.subheader("Засечени съставки: ")
     if found_words:
         for word, desc in found_words.items():
             st.warning(f"{word} — {desc}")
